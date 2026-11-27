@@ -3219,10 +3219,14 @@ const WTH = (() => {
   }
 
   async function load() {
-    const wr = await fetch("https://wttr.in/?format=j1");
+    // wttr.in: forecast JSON gives coordinates; the plain-text "%l" gives the city the IP geolocates to
+    // (the JSON "nearest_area" is a finer, less familiar locality, e.g. Vypeen instead of Kochi)
+    const [wr, lr] = await Promise.all([fetch("https://wttr.in/?format=j1"), fetch("https://wttr.in/?format=%25l").catch(() => null)]);
     if (!wr.ok) throw new Error("wttr.in " + wr.status);
     const w = await wr.json(), a = w.nearest_area[0];
-    const place = `${a.areaName[0].value}, ${a.country[0].value}`;
+    let city = a.areaName[0].value;
+    try { const txt = lr && lr.ok ? (await lr.text()).split(",")[0].trim() : ""; if (txt && txt.length < 60 && !/<|unknown/i.test(txt)) city = txt; } catch (e) {}
+    const place = `${city}, ${a.country[0].value}`;
     const q = "https://api.open-meteo.com/v1/forecast?latitude=" + a.latitude + "&longitude=" + a.longitude +
       "&current=temperature_2m,apparent_temperature,is_day,weather_code,relative_humidity_2m,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,dew_point_2m" +
       "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max" +
@@ -3248,7 +3252,7 @@ const WTH = (() => {
     });
     const vis = h.visibility && h.visibility[start] != null ? Math.round(h.visibility[start] / 100) / 10 : 10;
     return {
-      place: esc(place), cityName: esc(a.areaName[0].value), localTime: t.text, date: `${WD[now.wd]}, ${now.d} ${MO[now.m]}`, dateShort: `${now.d} ${MO[now.m].slice(0, 3)}`,
+      place: esc(place), cityName: esc(city), localTime: t.text, date: `${WD[now.wd]}, ${now.d} ${MO[now.m]}`, dateShort: `${now.d} ${MO[now.m].slice(0, 3)}`,
       weekdayLong: WD[now.wd], weekdayShort: WD[now.wd].slice(0, 3), dayNum: now.d, monthShort: MO[now.m].slice(0, 3), monthLong: MO[now.m], year: now.y,
       hour24: t.h, minute: t.m, isNight: night,
       now: { tempC: Math.round(c.temperature_2m), icon, desc, feelsC: Math.round(c.apparent_temperature), code: c.weather_code },
