@@ -602,15 +602,23 @@ const WTH = (() => {
   }
 
   async function load() {
-    // wttr.in: forecast JSON gives coordinates; the plain-text "%l" gives the city the IP geolocates to
-    // (the JSON "nearest_area" is a finer, less familiar locality, e.g. Vypeen instead of Kochi)
-    const [wr, lr] = await Promise.all([fetch("https://wttr.in/?format=j1"), fetch("https://wttr.in/?format=%25l").catch(() => null)]);
-    if (!wr.ok) throw new Error("wttr.in " + wr.status);
-    const w = await wr.json(), a = w.nearest_area[0];
-    let city = a.areaName[0].value;
-    try { const txt = lr && lr.ok ? (await lr.text()).split(",")[0].trim() : ""; if (txt && txt.length < 60 && !/<|unknown/i.test(txt)) city = txt; } catch (e) {}
-    const place = `${city}, ${a.country[0].value}`;
-    const q = "https://api.open-meteo.com/v1/forecast?latitude=" + a.latitude + "&longitude=" + a.longitude +
+    // Location comes from IP geolocation (ipwho.is: free, no key, CORS). wttr.in's plain-text location is
+    // unavailable to browsers (it returns an HTML page for browser user agents) and its JSON "nearest_area"
+    // is a finer locality (Vypeen instead of Kochi), so wttr.in is only the fallback.
+    let city, country, lat, lon;
+    try {
+      const ir = await fetch("https://ipwho.is/");
+      const ip = await ir.json();
+      if (!ip.success || ip.latitude == null) throw new Error("ipwho.is failed");
+      city = ip.city || ip.region; country = ip.country; lat = ip.latitude; lon = ip.longitude;
+    } catch (e) {
+      const wr = await fetch("https://wttr.in/?format=j1");
+      if (!wr.ok) throw new Error("location lookup failed");
+      const a = (await wr.json()).nearest_area[0];
+      city = a.areaName[0].value; country = a.country[0].value; lat = a.latitude; lon = a.longitude;
+    }
+    const place = `${city}, ${country}`;
+    const q = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon +
       "&current=temperature_2m,apparent_temperature,is_day,weather_code,relative_humidity_2m,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,dew_point_2m" +
       "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max" +
       "&hourly=temperature_2m,precipitation_probability,precipitation,visibility&timezone=auto&forecast_days=7";
